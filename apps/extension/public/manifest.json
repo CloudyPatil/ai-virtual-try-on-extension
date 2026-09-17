@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "TryOn Studio",
+  "version": "0.1.0",
+  "description": "Select products from shopping pages and create AI virtual try-on previews.",
+  "minimum_chrome_version": "114",
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
+  "host_permissions": ["http://127.0.0.1:8787/*"],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open TryOn Studio"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+

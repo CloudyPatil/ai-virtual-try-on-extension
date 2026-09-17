@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+*.log
+.DS_Store
+.vite/
+.pytest_cache/
+__pycache__/
+.venv/
+artifacts/
+tmp/
+

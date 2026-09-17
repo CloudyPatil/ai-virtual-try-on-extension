@@ -1,0 +1,20 @@
+{
+  "name": "virtual-try-on-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @tryon/contracts && npm run build --workspace @tryon/api && npm run build --workspace @tryon/extension",
+    "dev:api": "npm run dev --workspace @tryon/api",
+    "dev:extension": "npm run dev --workspace @tryon/extension",
+    "test": "npm run build --workspace @tryon/contracts && npm run test --workspace @tryon/contracts && npm run test --workspace @tryon/api && npm run test --workspace @tryon/extension",
+    "typecheck": "npm run build --workspace @tryon/contracts && npm run typecheck --workspace @tryon/api && npm run typecheck --workspace @tryon/extension && npm run typecheck --workspace @tryon/contracts",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
