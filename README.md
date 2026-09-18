@@ -25,9 +25,18 @@ apps/
 packages/
   contracts/    Shared schemas and TypeScript contracts
 docs/           Architecture, traceability and implementation notes
+notebooks/
+  tryon_studio_colab.ipynb  One-cell resumable free-GPU launcher
+scripts/
+  configure-remote-worker.ps1  Secure local endpoint configurator
 services/
   inference-worker/  Secured CatVTON service for a remote CUDA runtime
 ```
+
+## Remote GPU setup
+
+Use the resumable Colab notebook and follow `docs/colab-runbook.md`. Google Drive retains model and package caches between runtime replacements; rerunning one cell restores the worker and prints the current HTTPS tunnel URL.
+
 
 ## Local setup
 

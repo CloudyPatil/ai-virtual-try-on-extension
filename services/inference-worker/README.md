@@ -4,12 +4,12 @@ This service implements the private worker contract used by `apps/api`. It is de
 
 ## Runtime setup
 
-1. Start a GPU runtime with at least 8 GB VRAM.
-2. Clone the official non-commercial CatVTON repository to `/content/CatVTON`.
-3. Install its requirements and this directory's lightweight API requirements.
-4. Set a long random `TRYON_WORKER_TOKEN`.
-5. Start `uvicorn app:app --host 0.0.0.0 --port 7860` from this directory.
-6. Expose the port through an authenticated HTTPS tunnel, then configure the Node API with `TRYON_PROVIDER=remote`, `TRYON_PROVIDER_URL`, and the same token.
+1. Open `notebooks/tryon_studio_colab.ipynb` in a T4 GPU Colab runtime.
+2. Add the private-repository `GITHUB_TOKEN` and a stable `TRYON_WORKER_TOKEN` to Colab Secrets.
+3. Run the notebook's single **Resume runtime** cell.
+4. Copy its new HTTPS URL into the local backend using `scripts/configure-remote-worker.ps1`.
+
+The complete first-run, reconnection and recovery instructions are in `docs/colab-runbook.md`. The runtime manager pins the official CatVTON revision, retains source/model/pip caches in Google Drive, skips completed setup inside a healthy VM and recreates only lost processes after a disconnect.
 
 The worker lazily downloads and loads CatVTON on its first request. It holds only in-memory images, serializes GPU inference to avoid out-of-memory failures, and returns a WebP data URL. It does not log or persist photographs.
 
