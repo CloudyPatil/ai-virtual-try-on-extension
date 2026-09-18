@@ -11,6 +11,42 @@ export const productCategorySchema = z.enum([
 
 export type ProductCategory = z.infer<typeof productCategorySchema>;
 
+export const profileAssetKindSchema = z.enum([
+  "full_body",
+  "upper_body",
+  "lower_body",
+  "feet",
+  "face",
+]);
+
+export type ProfileAssetKind = z.infer<typeof profileAssetKindSchema>;
+
+export const profileAssetSchema = z.object({
+  kind: profileAssetKindSchema,
+  dataUrl: z.string().regex(/^data:image\/(jpeg|png|webp);base64,/i),
+  fileName: z.string().min(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  updatedAt: z.string().datetime(),
+});
+
+export type ProfileAsset = z.infer<typeof profileAssetSchema>;
+
+export const digitalProfileSchema = z.object({
+  id: z.literal("default"),
+  name: z.string().min(1).max(80),
+  assets: z.object({
+    full_body: profileAssetSchema.optional(),
+    upper_body: profileAssetSchema.optional(),
+    lower_body: profileAssetSchema.optional(),
+    feet: profileAssetSchema.optional(),
+    face: profileAssetSchema.optional(),
+  }),
+  updatedAt: z.string().datetime(),
+});
+
+export type DigitalProfile = z.infer<typeof digitalProfileSchema>;
+
 export const detectedProductSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -73,4 +109,3 @@ export type TryOnJob = z.infer<typeof tryOnJobSchema>;
 export type ExtensionMessage =
   | { type: "TRYON_DETECT_PRODUCTS" }
   | { type: "TRYON_PRODUCTS_DETECTED"; products: DetectedProduct[] };
-

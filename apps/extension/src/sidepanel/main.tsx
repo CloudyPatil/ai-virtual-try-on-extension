@@ -1,24 +1,19 @@
-import type { DetectedProduct, ProductCategory, TryOnJob } from "@tryon/contracts";
+import type { DetectedProduct, DigitalProfile, ProductCategory, ProfileAssetKind, TryOnJob } from "@tryon/contracts";
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createTryOnJob, getTryOnJob } from "./api.js";
+import { optimizeProfileImage } from "./image-utils.js";
+import { emptyProfile, profileAssetDefinitions, profileCompletion, selectProfileAsset } from "./profile.js";
+import { deleteProfile, loadProfile, saveProfile } from "./profile-store.js";
 import "./styles.css";
 
 const terminalStatuses = new Set(["completed", "failed", "cancelled"]);
 
-async function readFileAsDataUrl(file: File) {
-  return await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error("Unable to read the photograph"));
-    reader.readAsDataURL(file);
-  });
-}
-
 function App() {
   const [products, setProducts] = useState<DetectedProduct[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
-  const [personImage, setPersonImage] = useState<string>();
+  const [profile, setProfile] = useState<DigitalProfile>(emptyProfile);
+  const [profileReady, setProfileReady] = useState(false);
   const [category, setCategory] = useState<ProductCategory>("upper_body");
   const [job, setJob] = useState<TryOnJob>();
   const [message, setMessage] = useState("Open a shopping page, then scan it for products.");
@@ -26,6 +21,17 @@ function App() {
     () => products.find((product) => product.id === selectedId),
     [products, selectedId],
   );
+  const selectedProfileAsset = useMemo(() => selectProfileAsset(profile, category), [profile, category]);
+  const completion = useMemo(() => profileCompletion(profile), [profile]);
+
+  useEffect(() => {
+    void loadProfile()
+      .then(setProfile)
+      .catch((error) => {
+        setMessage(error instanceof Error ? error.message : "Unable to load your saved profile.");
+      })
+      .finally(() => setProfileReady(true));
+  }, []);
 
   useEffect(() => {
     if (!selectedProduct?.categoryHint) return;
@@ -69,26 +75,36 @@ function App() {
     }
   }
 
-  async function selectPhoto(file: File | undefined) {
+  async function selectPhoto(kind: ProfileAssetKind, file: File | undefined) {
     if (!file) return;
-    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
-      setMessage("Choose a JPEG, PNG or WebP photograph.");
-      return;
+    setMessage("Optimizing photograph for secure local storage...");
+    try {
+      const asset = await optimizeProfileImage(file, kind);
+      const nextProfile: DigitalProfile = {
+        ...profile,
+        assets: { ...profile.assets, [kind]: asset },
+        updatedAt: new Date().toISOString(),
+      };
+      await saveProfile(nextProfile);
+      setProfile(nextProfile);
+      setMessage("Profile photograph saved locally in this browser.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to save the photograph.");
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setMessage("The photograph must be smaller than 10 MB.");
-      return;
-    }
-    setPersonImage(await readFileAsDataUrl(file));
-    setMessage("Profile photograph ready. It is uploaded only when you start generation.");
+  }
+
+  async function clearProfile() {
+    await deleteProfile();
+    setProfile(emptyProfile());
+    setMessage("Local profile photographs deleted.");
   }
 
   async function generate() {
-    if (!personImage || !selectedProduct) return;
+    if (!selectedProfileAsset || !selectedProduct) return;
     setMessage("Submitting try-on request…");
     try {
       const nextJob = await createTryOnJob({
-        personImageDataUrl: personImage,
+        personImageDataUrl: selectedProfileAsset.dataUrl,
         product: selectedProduct,
         category,
         preserveBackground: true,
@@ -131,11 +147,30 @@ function App() {
       </section>
 
       <section>
-        <div className="section-heading"><div><span>Step 2</span><h2>Add your profile photo</h2></div></div>
-        <label className="upload">
-          {personImage ? <img src={personImage} alt="Selected profile" /> : <span>Front-facing upper- or full-body photograph</span>}
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void selectPhoto(event.target.files?.[0])} />
-        </label>
+        <div className="section-heading">
+          <div><span>Step 2</span><h2>Build your reusable profile</h2></div>
+          {completion.completed > 0 && <button className="text-button" onClick={() => void clearProfile()}>Delete all</button>}
+        </div>
+        <div className="profile-summary">
+          <strong>{profileReady ? `${completion.completed} of ${completion.total} photos ready` : "Loading local profile..."}</strong>
+          <span>Stored only in this browser until you generate a preview.</span>
+        </div>
+        <div className="profile-grid">
+          {profileAssetDefinitions.map((definition) => {
+            const asset = profile.assets[definition.kind];
+            return (
+              <label className={`profile-card ${asset ? "complete" : ""}`} key={definition.kind}>
+                {asset ? <img src={asset.dataUrl} alt={`${definition.label} profile`} /> : <span className="profile-placeholder">+</span>}
+                <span className="profile-copy">
+                  <strong>{definition.label}</strong>
+                  <small>{asset ? `${asset.width} ? ${asset.height}` : definition.guidance}</small>
+                </span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void selectPhoto(definition.kind, event.target.files?.[0])} />
+              </label>
+            );
+          })}
+        </div>
+        {!selectedProfileAsset && <p className="inline-warning">Add a compatible profile photo for the selected garment category.</p>}
       </section>
 
       <section>
@@ -148,7 +183,7 @@ function App() {
             <option value="lower_body">Pants or trousers</option>
           </select>
         </label>
-        <button className="primary" disabled={!personImage || !selectedProduct || Boolean(job && !terminalStatuses.has(job.status))} onClick={generate}>
+        <button className="primary" disabled={!selectedProfileAsset || !selectedProduct || Boolean(job && !terminalStatuses.has(job.status))} onClick={generate}>
           Generate virtual try-on
         </button>
         {job && (
