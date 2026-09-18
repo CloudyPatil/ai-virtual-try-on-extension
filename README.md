@@ -9,12 +9,12 @@ The repository currently provides:
 - a Chrome Manifest V3 extension with a side-panel interface;
 - reusable cross-site product-candidate detection;
 - a TypeScript orchestration API;
-- asynchronous mock inference jobs;
+- reusable category-aware profiles and asynchronous inference jobs;
 - shared API contracts and validation;
 - requirement and architecture documentation;
-- automated tests.
+- a secured remote CatVTON GPU worker and automated tests.
 
-The mock provider deliberately labels its output. A remote CatVTON-compatible provider will replace it after the GPU feasibility benchmark.
+Mock inference remains the local default. Setting the documented provider variables routes jobs to the remote CatVTON worker so the development laptop does not carry the GPU load.
 
 ## Repository layout
 
@@ -25,6 +25,8 @@ apps/
 packages/
   contracts/    Shared schemas and TypeScript contracts
 docs/           Architecture, traceability and implementation notes
+services/
+  inference-worker/  Secured CatVTON service for a remote CUDA runtime
 ```
 
 ## Local setup
@@ -48,6 +50,13 @@ npm.cmd run build --workspace @tryon/extension
 ```
 
 Then open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `apps/extension/dist`.
+
+The lightweight worker tests can be run independently:
+
+```powershell
+cd services/inference-worker
+python -m pytest -q
+```
 
 ## Safety and scope
 
