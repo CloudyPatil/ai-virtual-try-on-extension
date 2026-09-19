@@ -54,3 +54,22 @@ progress { width: 100%; accent-color: #5de1ba; }
 .inline-warning { margin-top: 10px; color: #ffd994; font-size: 12px; }
 .profile-card:focus-within { outline: 2px solid #62d8ff; outline-offset: 2px; }
 
+.variant-picker { display: grid; gap: 9px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #263d5a; }
+.variant-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #e3edf9; font-size: 13px; }
+.variant-heading span { flex: none; color: #8297b1; font-size: 11px; }
+.variant-picker > p { font-size: 12px; }
+.variant-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; max-height: 214px; overflow: auto; }
+.variant-card { display: grid; gap: 3px; min-width: 0; padding: 4px; color: #c4d6ea; text-align: center; background: #0a1727; border: 1px solid #314c69; border-radius: 9px; font-size: 10px; }
+.variant-card.selected { border-color: #5de1ba; box-shadow: 0 0 0 2px rgba(93, 225, 186, .18); }
+.variant-card img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; border-radius: 5px; }
+.variant-card:focus-visible, .manual-image-controls input:focus-visible { outline: 2px solid #62d8ff; outline-offset: 2px; }
+.manual-image-form { display: grid; gap: 5px; margin-top: 2px; color: #9fb2ca; font-size: 12px; }
+.manual-image-controls { display: flex; gap: 6px; }
+.manual-image-controls input { min-width: 0; flex: 1; padding: 9px; color: #e7eef8; background: #0a1727; border: 1px solid #314c69; border-radius: 9px; font-size: 12px; }
+.manual-image-controls .secondary { flex: none; padding: 8px; font-size: 12px; }
+.manual-image-controls .secondary:disabled { cursor: not-allowed; opacity: .5; }
+.selected-image-preview { display: grid; gap: 6px; justify-items: center; min-height: 78px; padding: 8px; border: 1px solid #314c69; border-radius: 10px; background: #0a1727; }
+.selected-image-preview img { display: block; width: 100%; max-height: 280px; object-fit: contain; border-radius: 6px; background: #fff; }
+.selected-image-preview span { color: #9fb2ca; font-size: 11px; text-align: center; line-height: 1.35; }
+.selected-image-preview.failed img { display: none; }
+.selected-image-preview.failed span { color: #ffd994; }

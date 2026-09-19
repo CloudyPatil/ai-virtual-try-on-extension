@@ -20,59 +20,127 @@ function absoluteUrl(value: string | undefined, baseUrl: string) {
     return undefined;
   }
 }
+function uniqueUrls(values: Array<string | undefined>, baseUrl: string) {
+  const urls = values.map((value) => absoluteUrl(value, baseUrl)).filter((value): value is string => Boolean(value));
+  return [...new Set(urls)].slice(0, 16);
+}
+
+function structuredImageUrls(value: unknown, baseUrl: string): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  return uniqueUrls(
+    values.flatMap((image): Array<string | undefined> => {
+      if (typeof image === "string") return [image];
+      if (!image || typeof image !== "object") return [];
+      const object = image as JsonObject;
+      return [object.url, object.contentUrl, object.thumbnailUrl].map((entry) =>
+        typeof entry === "string" ? entry : undefined,
+      );
+    }),
+    baseUrl,
+  );
+}
+
+function srcsetUrls(value: string | null) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((candidate) => {
+      const [url, descriptor] = candidate.trim().split(/\s+/);
+      const size = descriptor ? Number.parseFloat(descriptor) : 0;
+      return { url, size: Number.isFinite(size) ? size : 0 };
+    })
+    .filter((candidate): candidate is { url: string; size: number } => Boolean(candidate.url))
+    .sort((left, right) => right.size - left.size)
+    .slice(0, 3)
+    .map((candidate) => candidate.url);
+}
+
+function imageElementUrls(image: HTMLImageElement, baseUrl: string) {
+  const pictureSources = [...(image.closest("picture")?.querySelectorAll<HTMLSourceElement>("source") ?? [])];
+  return uniqueUrls(
+    [
+      image.getAttribute("data-original") ?? undefined,
+      ...srcsetUrls(image.getAttribute("srcset")),
+      ...pictureSources.flatMap((source) => srcsetUrls(source.srcset)),
+      image.getAttribute("data-src") ?? undefined,
+      image.getAttribute("data-lazy-src") ?? undefined,
+      image.currentSrc,
+      image.getAttribute("src") ?? undefined,
+    ],
+    baseUrl,
+  );
+}
+
+function normalizedImageKey(value: string) {
+  const url = new URL(value);
+  let path = url.pathname;
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // A malformed third-party URL must not interrupt page scanning.
+  }
+  path = path.replace(/[-_]\d{2,4}x\d{2,4}(?=\.)/i, "");
+  for (const key of ["w", "width", "h", "height", "q", "quality", "format", "fit"]) {
+    url.searchParams.delete(key);
+  }
+  return `${url.hostname.toLowerCase()}${path}${url.search}`;
+}
 
 function inferCategory(text: string): ProductCategory | undefined {
   const value = text.toLowerCase();
-  if (/dress|gown/.test(value)) return "dress";
-  if (/pant|trouser|jean|skirt|shorts/.test(value)) return "lower_body";
-  if (/shirt|t-shirt|tee|top|jacket|hoodie|sweater|blazer/.test(value)) return "upper_body";
-  if (/shoe|sneaker|boot|sandal|heel/.test(value)) return "footwear";
-  if (/necklace|earring|bracelet|jewel/.test(value)) return "jewellery";
-  if (/bag|hat|watch|belt|scarf/.test(value)) return "accessory";
+  if (/\b(dress|dresses|gown|gowns|jumpsuit|jumpsuits)\b/.test(value)) return "dress";
+  if (/\b(pants?|trousers?|jeans?|skirts?|shorts?|leggings?|salwar)\b/.test(value)) return "lower_body";
+  if (/\b(t-?shirts?|shirts?|tees?|tops?|jackets?|hoodies?|sweaters?|blazers?|blouses?|kurtas?|kurtis?)\b/.test(value)) return "upper_body";
+  if (/\b(shoes?|sneakers?|boots?|sandals?|heels?)\b/.test(value)) return "footwear";
+  if (/\b(necklaces?|earrings?|bracelets?|jewell?ery)\b/.test(value)) return "jewellery";
+  if (/\b(bags?|hats?|watches?|belts?|scarves?)\b/.test(value)) return "accessory";
   return undefined;
 }
 
 function readJsonLd(document: Document, pageUrl: string): DetectedProduct[] {
   const products: DetectedProduct[] = [];
+  let visitedNodes = 0;
   const visit = (value: unknown) => {
+    if (visitedNodes++ >= 1000) return;
     if (Array.isArray(value)) {
       value.forEach(visit);
       return;
     }
     if (!value || typeof value !== "object") return;
     const object = value as JsonObject;
-    if (Array.isArray(object["@graph"])) visit(object["@graph"]);
+    for (const key of ["@graph", "mainEntity", "itemListElement", "item", "hasVariant"]) {
+      if (object[key]) visit(object[key]);
+    }
     const rawType = object["@type"];
     const types = Array.isArray(rawType) ? rawType : [rawType];
-    if (!types.some((type) => String(type).toLowerCase() === "product")) return;
+    if (!types.some((type) => /(?:^|\/)product$/i.test(String(type)))) return;
 
-    const rawImages = Array.isArray(object.image) ? object.image : [object.image];
-    const imageUrl = rawImages
-      .map((image) => (typeof image === "string" ? image : undefined))
-      .map((image) => absoluteUrl(image, pageUrl))
-      .find(Boolean);
+    const imageUrls = structuredImageUrls(object.image, pageUrl);
+    const imageUrl = imageUrls[0];
     if (!imageUrl) return;
 
     const title = String(object.name ?? document.title ?? "Detected product").trim();
     const offers = object.offers && typeof object.offers === "object" ? (object.offers as JsonObject) : {};
     const price = offers.price ? `${String(offers.priceCurrency ?? "")} ${String(offers.price)}`.trim() : undefined;
+    const productPageUrl = absoluteUrl(typeof object.url === "string" ? object.url : undefined, pageUrl) ?? pageUrl;
+    const categoryHint = inferCategory(`${title} ${String(object.category ?? "")}`);
     products.push({
-      id: stableId(`${pageUrl}:${imageUrl}`),
+      id: stableId(`${productPageUrl}:${imageUrl}`),
       title,
       imageUrl,
-      pageUrl,
+      imageUrls,
+      pageUrl: productPageUrl,
       ...(price ? { price } : {}),
-      ...(inferCategory(`${title} ${String(object.category ?? "")}`)
-        ? { categoryHint: inferCategory(`${title} ${String(object.category ?? "")}`) }
-        : {}),
-      score: 100,
+      ...(categoryHint ? { categoryHint } : {}),
+      score: categoryHint && ["upper_body", "lower_body", "dress"].includes(categoryHint) ? 100 : 55,
       source: "jsonld",
     });
   };
 
-  document.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+  [...document.querySelectorAll('script[type="application/ld+json"]')].slice(0, 30).forEach((script) => {
     try {
-      visit(JSON.parse(script.textContent ?? ""));
+      const content = script.textContent ?? "";
+      if (content.length <= 1_000_000) visit(JSON.parse(content));
     } catch {
       // Invalid third-party structured data is ignored.
     }
@@ -81,49 +149,77 @@ function readJsonLd(document: Document, pageUrl: string): DetectedProduct[] {
 }
 
 function readMetadata(document: Document, pageUrl: string): DetectedProduct[] {
-  const imageValue =
-    document.querySelector<HTMLMetaElement>('meta[property="og:image"]')?.content ??
-    document.querySelector<HTMLMetaElement>('meta[name="twitter:image"]')?.content;
-  const imageUrl = absoluteUrl(imageValue, pageUrl);
+  const imageUrls = uniqueUrls(
+    [...document.querySelectorAll<HTMLMetaElement>('meta[property="og:image"], meta[name="twitter:image"]')].map(
+      (element) => element.content,
+    ),
+    pageUrl,
+  );
+  const imageUrl = imageUrls[0];
   if (!imageUrl) return [];
   const title =
     document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content?.trim() ||
     document.title ||
     "Page product";
+  const ogType = document.querySelector<HTMLMetaElement>('meta[property="og:type"]')?.content?.toLowerCase();
+  if (ogType && ogType !== "product") return [];
+  const categoryHint = inferCategory(title);
+  if (!categoryHint && ogType !== "product") return [];
   return [
     {
       id: stableId(`${pageUrl}:${imageUrl}`),
       title,
       imageUrl,
+      imageUrls,
       pageUrl,
-      ...(inferCategory(title) ? { categoryHint: inferCategory(title) } : {}),
-      score: 82,
+      ...(categoryHint ? { categoryHint } : {}),
+      score: categoryHint && ["upper_body", "lower_body", "dress"].includes(categoryHint) ? 82 : 55,
       source: "metadata",
     },
   ];
 }
 
 function readDomImages(document: Document, pageUrl: string): DetectedProduct[] {
-  return [...document.images]
+  if (document.querySelector<HTMLMetaElement>('meta[property="og:type"]')?.content?.toLowerCase() === "article") return [];
+  return [...document.images].slice(0, 600)
     .filter((image) => {
       const rectangle = image.getBoundingClientRect();
-      return rectangle.width >= 140 && rectangle.height >= 140 && rectangle.bottom >= 0;
+      const description = `${image.alt} ${image.className} ${image.id}`.toLowerCase();
+      const aspectRatio = rectangle.height ? rectangle.width / rectangle.height : 1;
+      const inProductContext = Boolean(image.closest("article, [data-product], [class*='product'], [class*='gallery'], [data-gallery]"));
+      const minSize = inProductContext ? 80 : 140;
+      return rectangle.width >= minSize && rectangle.height >= minSize && rectangle.bottom >= 0 &&
+        aspectRatio > 0.28 && aspectRatio < 3.5 &&
+        !/logo|icon|sprite|avatar|badge/.test(description);
     })
     .flatMap((image): DetectedProduct[] => {
-      const imageUrl = absoluteUrl(image.currentSrc || image.src, pageUrl);
+      const imageUrls = imageElementUrls(image, pageUrl);
+      const imageUrl = imageUrls[0];
       if (!imageUrl) return [];
       const rectangle = image.getBoundingClientRect();
-      const nearby = image.closest("article, li, [class*='product'], [data-product]");
+      const gallery = image.closest("[class*='gallery'], [data-gallery]");
+      const productContainer = image.closest("article, [class*='product'], [data-product]");
+      const nearby = gallery ?? productContainer ?? image.closest("li");
+      const link = image.closest<HTMLAnchorElement>("a[href]");
+      const linkTarget = absoluteUrl(link?.getAttribute("href") ?? undefined, pageUrl);
+      const isZoomLink = Boolean(linkTarget && /\.(?:jpe?g|png|webp|avif)$/i.test(new URL(linkTarget).pathname));
+      const productPageUrl = linkTarget && !isZoomLink ? linkTarget : pageUrl;
       const nearbyText = nearby?.textContent?.replace(/\s+/g, " ").trim().slice(0, 180) ?? "";
-      const title = image.alt.trim() || nearbyText || document.title || "Visible product";
+      const heading = productContainer?.querySelector("h2, h3, [itemprop='name']")?.textContent?.trim();
+      const pageHeading = gallery ? document.querySelector("h1")?.textContent?.trim() : undefined;
+      const title = heading || pageHeading || image.alt.trim() || nearbyText || document.title || "Visible product";
+      const productKey = linkTarget && !isZoomLink
+        ? productPageUrl
+        : gallery ? pageUrl : `${pageUrl}:${title}`;
       const areaScore = Math.min(30, Math.round((rectangle.width * rectangle.height) / 18_000));
       const contextScore = nearby ? 18 : 0;
       const altScore = image.alt.trim() ? 12 : 0;
       const product: DetectedProduct = {
-        id: stableId(`${pageUrl}:${imageUrl}`),
+        id: stableId(productKey),
         title,
         imageUrl,
-        pageUrl,
+        imageUrls,
+        pageUrl: productPageUrl,
         ...(inferCategory(`${title} ${nearbyText}`)
           ? { categoryHint: inferCategory(`${title} ${nearbyText}`) }
           : {}),
@@ -134,16 +230,42 @@ function readDomImages(document: Document, pageUrl: string): DetectedProduct[] {
     });
 }
 
+function mergeCandidates(candidates: DetectedProduct[]) {
+  const merged: DetectedProduct[] = [];
+  for (const candidate of candidates) {
+    const candidateImages = candidate.imageUrls ?? [candidate.imageUrl];
+    const candidateKeys = new Set(candidateImages.map(normalizedImageKey));
+    const identity = `${candidate.pageUrl}:${candidate.title.toLowerCase().replace(/\s+/g, " ").trim()}`;
+    const index = merged.findIndex((product) => {
+      const productImages = product.imageUrls ?? [product.imageUrl];
+      const overlaps = productImages.some((image) => candidateKeys.has(normalizedImageKey(image)));
+      const productIdentity = `${product.pageUrl}:${product.title.toLowerCase().replace(/\s+/g, " ").trim()}`;
+      const sameProductPage = product.pageUrl === candidate.pageUrl;
+      return product.id === candidate.id || identity === productIdentity || (sameProductPage && overlaps);
+    });
+    if (index < 0) {
+      merged.push({ ...candidate, imageUrls: candidateImages });
+      continue;
+    }
+    const previous = merged[index]!;
+    const best = candidate.score > previous.score ? candidate : previous;
+    const imageUrls = [...new Set([...(previous.imageUrls ?? [previous.imageUrl]), ...candidateImages])].slice(0, 16);
+    const categoryHint = best.categoryHint ?? previous.categoryHint ?? candidate.categoryHint;
+    merged[index] = {
+      ...best,
+      imageUrl: imageUrls[0]!,
+      imageUrls,
+      ...(categoryHint ? { categoryHint } : {}),
+    };
+  }
+  return merged;
+}
+
 export function detectProducts(document: Document, pageUrl = document.location.href) {
   const candidates = [
     ...readJsonLd(document, pageUrl),
     ...readMetadata(document, pageUrl),
     ...readDomImages(document, pageUrl),
   ];
-  const byImage = new Map<string, DetectedProduct>();
-  for (const product of candidates) {
-    const previous = byImage.get(product.imageUrl);
-    if (!previous || product.score > previous.score) byImage.set(product.imageUrl, product);
-  }
-  return [...byImage.values()].sort((left, right) => right.score - left.score).slice(0, 24);
+  return mergeCandidates(candidates).sort((left, right) => right.score - left.score).slice(0, 24);
 }

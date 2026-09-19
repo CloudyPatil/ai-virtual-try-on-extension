@@ -7,12 +7,15 @@ import io
 import os
 import secrets
 import socket
+import ssl
 import sys
 import threading
 from typing import Any, Literal
 from urllib.parse import urlparse
 
+import httpcore
 import httpx
+from httpcore._backends.sync import SyncBackend
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 
@@ -68,27 +71,86 @@ def decode_data_image(value: str):
         raise HTTPException(status_code=400, detail="Person image could not be decoded") from error
 
 
-def validate_public_image_request(request: httpx.Request) -> None:
-    parsed = urlparse(str(request.url))
-    if parsed.scheme != "https" or not parsed.hostname:
-        raise HTTPException(status_code=400, detail="Product image URL must use HTTPS")
+def resolve_public_address(hostname: str, port: int) -> str:
+    """Resolve once and return the exact public IP to use for the TCP connection."""
+    if "%" in hostname:
+        raise HTTPException(status_code=400, detail="Invalid product image address")
     try:
-        addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+        literal_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        if not literal_ip.is_global:
+            raise HTTPException(status_code=400, detail="Private-network product image URLs are not allowed")
+        return str(literal_ip)
+    try:
+        addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except socket.gaierror as error:
         raise HTTPException(status_code=400, detail="Product image hostname could not be resolved") from error
     if not addresses:
         raise HTTPException(status_code=400, detail="Product image hostname could not be resolved")
+    public_addresses: list[str] = []
     for address in addresses:
-        ip = ipaddress.ip_address(address[4][0])
+        try:
+            raw_ip = address[4][0]
+            if "%" in raw_ip:
+                raise ValueError("Scoped IP address")
+            ip = ipaddress.ip_address(raw_ip)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Invalid product image address") from error
         if not ip.is_global:
             raise HTTPException(status_code=400, detail="Private-network product image URLs are not allowed")
+        public_addresses.append(str(ip))
+    return public_addresses[0]
+
+
+def validate_public_image_request(request: httpx.Request) -> None:
+    parsed = urlparse(str(request.url))
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="Product image URL must use HTTPS without credentials")
+    resolve_public_address(parsed.hostname, parsed.port or 443)
+
+
+class PublicImageNetworkBackend(SyncBackend):
+    """Pin each connection to an address validated immediately before connecting."""
+
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        address = resolve_public_address(host, port)
+        return super().connect_tcp(
+            address,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+
+class PublicImageTransport(httpx.HTTPTransport):
+    def __init__(self) -> None:
+        # HTTPX 0.28/httpcore 1.x keep TLS SNI and certificate checks on the
+        # original hostname while connect_tcp receives the validated IP.
+        super().__init__(trust_env=False, limits=httpx.Limits(max_connections=1, max_keepalive_connections=0))
+        self._pool.close()
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=ssl.create_default_context(),
+            network_backend=PublicImageNetworkBackend(),
+            max_connections=1,
+            max_keepalive_connections=0,
+        )
 
 
 def download_product_image(url: str):
     from PIL import Image
 
     try:
-        with httpx.Client(follow_redirects=True, timeout=20, event_hooks={"request": [validate_public_image_request]}) as client:
+        with httpx.Client(
+            transport=PublicImageTransport(),
+            trust_env=False,
+            follow_redirects=True,
+            max_redirects=5,
+            timeout=20,
+            event_hooks={"request": [validate_public_image_request]},
+        ) as client:
             with client.stream("GET", url, headers={"user-agent": "TryOnStudio/0.1"}) as response:
                 response.raise_for_status()
                 content_type = response.headers.get("content-type", "")

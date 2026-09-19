@@ -7,7 +7,8 @@ An academic, privacy-aware shopping assistant that detects products on shopping 
 The repository currently provides:
 
 - a Chrome Manifest V3 extension with a side-panel interface;
-- reusable cross-site product-candidate detection;
+- reusable cross-site product-candidate detection from JSON-LD, page metadata and visible images;
+- ranked product cards with image-variant selection and a manual HTTPS image-URL override;
 - a TypeScript orchestration API;
 - reusable category-aware profiles and asynchronous inference jobs;
 - shared API contracts and validation;
@@ -15,6 +16,8 @@ The repository currently provides:
 - a secured remote CatVTON GPU worker and automated tests.
 
 Mock inference remains the local default. Setting the documented provider variables routes jobs to the remote CatVTON worker so the development laptop does not carry the GPU load.
+
+Phase 4's resumable Colab workflow is implemented, but a live CatVTON run on a fresh Colab runtime still needs to be recorded. Phase 5's detector has automated DOM tests; picker behavior and cross-site acceptance are tracked in [the Phase 5 validation checklist](docs/phase-5-validation.md). Neither an automated DOM test nor the mock provider proves that an arbitrary retailer will work or that a generated image is realistic.
 
 ## Repository layout
 
@@ -37,6 +40,11 @@ services/
 
 Use the resumable Colab notebook and follow `docs/colab-runbook.md`. Google Drive retains model and package caches between runtime replacements; rerunning one cell restores the worker and prints the current HTTPS tunnel URL.
 
+## Choosing a product image
+
+Open a shopping page and click **Scan page** in the extension side panel. Select a detected product card, then select the exact garment image from its available choices. If the correct image is missing, paste its public HTTPS image URL under **Image missing?** and click **Use URL**. The manual URL changes only the image sent for the selected product; it does not create a product when scanning finds none. Check the preview and clothing category before generating.
+
+Retailer image hosts may block server-side downloads, require cookies, or return an unsupported image format. In those cases the preview or remote generation can fail even if the image appears in the browser. See [Phase 5 validation](docs/phase-5-validation.md) for a repeatable three-site test and failure log.
 
 ## Local setup
 

@@ -49,6 +49,7 @@ export type DigitalProfile = z.infer<typeof digitalProfileSchema>;
 
 export const detectedProductSchema = z.object({
   id: z.string().min(1),
+  imageUrls: z.array(z.string().url()).min(1).max(16).optional(),
   title: z.string().min(1),
   imageUrl: z.string().url(),
   pageUrl: z.string().url(),
