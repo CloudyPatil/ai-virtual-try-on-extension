@@ -18,7 +18,7 @@ TUNNEL_PATTERN = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 
 def run(command: list[str], **kwargs):
-    print("+", " ".join(command))
+    print("+", " ".join(command), flush=True)
     return subprocess.run(command, check=True, **kwargs)
 
 
@@ -60,7 +60,7 @@ def ensure_catvton(vendor_dir: Path) -> Path:
 
 
 def ensure_dependencies(worker_dir: Path, catvton_dir: Path, persistent_root: Path, runtime_root: Path) -> None:
-    marker_key = file_digest(worker_dir / "requirements-colab.txt")
+    marker_key = file_digest(worker_dir / "requirements-colab.txt", Path(__file__))
     marker = runtime_root / f"dependencies-{marker_key}.ready"
     if marker.exists():
         print("Dependencies already prepared in this runtime.")
@@ -76,11 +76,25 @@ def ensure_dependencies(worker_dir: Path, catvton_dir: Path, persistent_root: Pa
             "pip",
             "install",
             "--disable-pip-version-check",
+            "--only-binary=numpy,scipy,matplotlib,opencv-python,pillow,scikit-image,pycocotools,av,tokenizers,safetensors",
+            "--timeout", "60",
+            "--retries", "3",
             "-r",
             str(worker_dir / "requirements-colab.txt"),
         ],
         env=environment,
     )
+    run([sys.executable, "-m", "pip", "check"], env=environment)
+    # Verify the real model imports before declaring setup complete.
+    # This does not download checkpoints or perform inference.
+    run([
+        sys.executable, "-c",
+        "import sys; sys.path.insert(0, " + repr(str(catvton_dir)) + "); "
+        "import numpy, scipy, cv2, av, peft, transformers, diffusers; "
+        "from model.pipeline import CatVTONPipeline; "
+        "from model.cloth_masker import AutoMasker; "
+        "print('CatVTON imports verified.')",
+    ], env=environment)
     marker.touch()
 
 
@@ -222,10 +236,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Resume the TryOn Studio Colab GPU runtime")
     parser.add_argument("--project-root", required=True, type=Path)
     parser.add_argument("--persistent-root", required=True, type=Path)
-    parser.add_argument("--token", required=True)
+    parser.add_argument("--token", default=os.environ.get("TRYON_WORKER_TOKEN", ""))
+    parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
 
-    if len(args.token) < 24:
+    if not args.prepare_only and len(args.token) < 24:
         raise RuntimeError("TRYON_WORKER_TOKEN must contain at least 24 characters")
 
     worker_dir = args.project_root / "services" / "inference-worker"
@@ -236,9 +251,18 @@ def main() -> None:
     runtime_root.mkdir(parents=True, exist_ok=True)
     args.persistent_root.mkdir(parents=True, exist_ok=True)
 
-    print("GPU:", require_gpu())
+    if sys.version_info[:2] != (3, 11):
+        raise RuntimeError("Use colab_bootstrap.py to launch the isolated Python 3.11 environment.")
+    print("GPU:", require_gpu(), flush=True)
     catvton_dir = ensure_catvton(args.persistent_root / "vendor")
     ensure_dependencies(worker_dir, catvton_dir, args.persistent_root, runtime_root)
+    if args.prepare_only:
+        print("[4/4] Environment preparation complete.", flush=True)
+        print("No web worker or tunnel was started.", flush=True)
+        print("Checkpoints and real inference have not been tested yet.", flush=True)
+        print("Worker Python:", sys.executable, flush=True)
+        return
+    print("[4/4] Starting worker and tunnel.", flush=True)
     state = start_runtime(worker_dir, catvton_dir, args.persistent_root, runtime_root, args.token)
 
     print("\nTryOn Studio GPU worker is ready.")

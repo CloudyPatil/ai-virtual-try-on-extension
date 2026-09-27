@@ -38,7 +38,7 @@ services/
 
 ## Remote GPU setup
 
-Use the resumable Colab notebook and follow `docs/colab-runbook.md`. Google Drive retains model and package caches between runtime replacements; rerunning one cell restores the worker and prints the current HTTPS tunnel URL.
+Use the resumable Colab notebook and follow `docs/colab-runbook.md`. It prepares an isolated Python 3.11 environment even when Colab uses Python 3.13, prints setup stages, and retains available package/model caches in Drive. Preparation-only mode is the default and starts no public API or tunnel. Remote serving requires a runtime/provider permitting that workflow; real model generation still needs live acceptance testing.
 
 ## Choosing a product image
 
