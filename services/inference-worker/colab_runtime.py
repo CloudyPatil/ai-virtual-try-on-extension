@@ -90,6 +90,7 @@ def ensure_dependencies(worker_dir: Path, catvton_dir: Path, persistent_root: Pa
     run([
         sys.executable, "-c",
         "import sys; sys.path.insert(0, " + repr(str(catvton_dir)) + "); "
+        "from accelerate.utils.memory import clear_device_cache; "
         "import numpy, scipy, cv2, av, peft, transformers, diffusers; "
         "from model.pipeline import CatVTONPipeline; "
         "from model.cloth_masker import AutoMasker; "

@@ -52,4 +52,5 @@ def test_dependency_install_uses_binary_wheels_and_validates_before_marker(monke
     assert any("--only-binary=numpy,scipy,matplotlib,opencv-python,pillow,scikit-image,pycocotools,av,tokenizers,safetensors" in c for c in commands)
     assert any(c[-2:] == ["pip", "check"] for c in commands)
     assert any("from model.pipeline import CatVTONPipeline" in c[-1] for c in commands)
+    assert any("from accelerate.utils.memory import clear_device_cache" in c[-1] for c in commands)
     assert list(tmp_path.glob("dependencies-*.ready"))
