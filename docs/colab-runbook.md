@@ -1,62 +1,40 @@
-# Resumable Google Colab runbook
+# Colab GPU validation runbook
 
-## Python compatibility and setup
+Use [the notebook](../notebooks/tryon_studio_colab.ipynb) in Google Colab. It is an interactive, notebook-driven acceptance route, not an always-on extension backend.
 
-The notebook launches colab_bootstrap.py, which creates a separate Python 3.11 environment under /content/tryon-studio/venv-py311. It installs CUDA PyTorch 2.4.1 and matching torchvision. Colab's notebook kernel can remain on Python 3.13.
+## Before running
 
-Setup prints four numbered stages and streams installation output. The first CUDA wheel download is large. Compiled dependencies require binary wheels, so unsupported packages fail rather than silently compiling from source. Success markers are written only after installation and validation succeed.
+1. In Colab select **Runtime → Change runtime type → T4 GPU**.
+2. Add `GITHUB_TOKEN` in Colab Secrets. Give it **Contents: Read-only** access to the private `CloudyPatil/ai-virtual-try-on-extension` repository and enable access for this notebook. Do not paste tokens into notebook code or share outputs containing tokens.
+3. Use photos you have permission to process. Do not commit them or share a notebook with saved image outputs.
 
-## One-time preparation
+You do not need to create a Drive folder. Cell 2 mounts Drive and creates `MyDrive/TryOnStudio`.
 
-1. Upload notebooks/tryon_studio_colab.ipynb to Colab and save a copy in Drive.
-2. Choose Runtime > Change runtime type > T4 GPU.
-3. Add GITHUB_TOKEN to Colab Secrets, selecting this private repository with Contents: Read-only. Enable notebook access.
-4. Run the first code cell with PREPARE_ONLY = True.
-5. Authorize Drive access.
-6. Wait for [4/4] Environment preparation complete.
+## Execute
 
-Authentication is passed through the subprocess environment and removed from ordinary Git error output. The source checkout fetches project fixes and merges with --ff-only, preserving local edits.
+Run cells **1–5 in order**:
 
-Preparation validates the environment and model imports. It does not download checkpoints or generate an image. Real notebook-driven inference remains an acceptance test.
+1. GPU preflight: confirms an NVIDIA GPU without any downloads.
+2. Drive and source: stores reusable package/model caches in Drive; clones the private code repository to fast local VM storage. This avoids slow Git metadata operations on Drive.
+3. Environment: creates isolated Python 3.11, installs matching CUDA PyTorch and pinned dependencies, and checks the CatVTON **pipeline** import. It does not download model weights. Success ends with `[4/4] Environment preparation complete.`
+4. Upload: prompts separately for a person photo and garment photo. Preview the purple clothing-region mask. Choose `upper`, `lower`, or `overall` and edit `MASK_BOX` if necessary.
+5. Real generation: downloads CatVTON attention/base/VAE weights into the Drive-backed cache on first use and generates one image. Success prints `REAL_TRYON_COMPLETE` and displays the result. Only this step tests actual model generation.
 
-## Free-Colab scope
+The rectangle mask is deliberately a simple, editable acceptance fixture. It is **not** the final automatic clothing masker and may produce rough edges. A live extension result with automatic masking remains a separate gate.
 
-Google restricts bypassing the notebook UI to interact primarily through a web UI on free runtimes without a positive compute-unit balance:
-https://research.google.com/colaboratory/faq.html
+## Interrupted setup or runtime replacement
 
-The default preparation mode does not start the remote worker or tunnel. Use notebook-driven model testing for free Colab. Serving through the extension requires a runtime/provider that permits that workflow.
+- Same VM, cell 3 failed: rerun cell 3. Install markers are written only after checks pass; the local Python/PyTorch environment can be reused.
+- Same VM, cell 5 failed: rerun cell 5 after reviewing the error. Hugging Face downloads can resume from their cache.
+- New VM: rerun cells 1–3, then upload images again in cell 4 and run cell 5. The new VM must recreate local Python and source, but Drive package/model caches can reduce downloads.
+- Project fix pushed: rerun cell 2, then cell 3. Cell 2 fast-forwards the local checkout; it does not overwrite local edits.
 
-## Resume behavior
+After failure run the final diagnostics cell and share the **last error lines**, redacting credentials and personal image paths. The setup log is also saved in `MyDrive/TryOnStudio/setup.log`. Do not delete Drive caches as a first troubleshooting step.
 
-| Situation | Recovery |
-|---|---|
-| Same healthy VM | Reuse the Python environment and success markers |
-| Interrupted installation | Retry; no success marker is written |
-| New VM | Recreate the Python environment using available Drive caches |
-| Project fixes pushed | Fetch and merge latest main with --ff-only |
-| Checkpoint download interrupted | Retry inference using the Hugging Face cache |
+## What this does and does not certify
 
-My Drive/TryOnStudio retains source and available package/model caches. Running processes and installed VM packages do not survive a VM replacement. Caching reduces repeated downloads but does not eliminate installation.
+The previous setup attempted `AutoMasker` import without installing its Detectron2 dependency. The new notebook deliberately tests the core CatVTON pipeline with an explicit mask; Detectron2 normally needs a build matched to PyTorch/CUDA, so a fully automatic extension worker still needs an independently validated masking solution. See [Detectron2 installation](https://github.com/facebookresearch/detectron2/blob/main/INSTALL.md).
 
-## Remote serving on a permitted runtime
+Colab free runtimes are not guaranteed and may disconnect. Google's [Colab FAQ](https://research.google.com/colaboratory/faq.html) says free managed runtimes may terminate sessions that bypass the notebook UI to interact primarily through a web UI. Therefore this notebook does not run a public tunnel or background serving process. A successful cell 5 validates the model and GPU path, **not** the remote extension integration. Serving the extension needs a permitted runtime/provider plus a separately tested automatic masker.
 
-Add TRYON_WORKER_TOKEN (at least 24 random characters) to Secrets and enable notebook access. Set PREPARE_ONLY = False. A successful launch prints TRYON_PROVIDER_URL.
-
-From the local repository root:
-
-```powershell
-.\scripts\configure-remote-worker.ps1 -Url "https://the-new-address.trycloudflare.com"
-npm.cmd run dev:api
-```
-
-Enter the same worker token at the hidden prompt. The generated .env is ignored by Git. Allow sufficient provider timeout for the first cold inference's checkpoint downloads.
-
-The Quick Tunnel URL changes when its process is recreated. Update local configuration and restart the API when it changes.
-
-## Diagnostics
-
-Run the final notebook cell after a failure. It reads the local setup.log, falling back to My Drive/TryOnStudio/setup.log, and worker/tunnel logs if present.
-
-The setup log is copied to Drive at normal completion or a handled failure. An abrupt VM termination may prevent that final copy, so retain the notebook's last output lines too. Worker/tunnel logs are absent in preparation-only mode.
-
-Do not delete Drive caches to recover from a package error. First record the numbered setup stage and final error.
+CatVTON checkpoints are [CC BY-NC-SA 4.0](https://huggingface.co/zhengchong/CatVTON); this academic validation is non-commercial. Review model and base-model licenses before any other use.

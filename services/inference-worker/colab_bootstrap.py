@@ -63,6 +63,15 @@ def ensure_worker_python(persistent_root: Path, runtime_root: Path, log_path: Pa
                 "import sys; assert sys.version_info[:2] == (3, 11); print('Worker Python:', sys.version)"],
                environment, log_path)
     torch_marker = runtime_root / "torch-cu121.ready"
+    cuda_check = [str(python), "-c",
+                  "import torch, torchvision; assert torch.cuda.is_available(), 'CUDA is unavailable'; print('CUDA GPU:', torch.cuda.get_device_name(0))"]
+    if torch_marker.exists():
+        print("[2/4] Verifying cached CUDA PyTorch.", flush=True)
+        try:
+            run_logged(cuda_check, environment, log_path)
+        except RuntimeError:
+            print("Cached CUDA PyTorch failed validation; repairing this VM's installation.", flush=True)
+            torch_marker.unlink(missing_ok=True)
     if not torch_marker.exists():
         print("[2/4] Installing CUDA PyTorch wheels. The first download is large.", flush=True)
         run_logged([
@@ -71,9 +80,7 @@ def ensure_worker_python(persistent_root: Path, runtime_root: Path, log_path: Pa
             f"torch=={TORCH_VERSION}", f"torchvision=={TORCHVISION_VERSION}",
             "--index-url", "https://download.pytorch.org/whl/cu121",
         ], environment, log_path)
-        run_logged([str(python), "-c",
-                    "import torch, torchvision; assert torch.cuda.is_available(), 'CUDA is unavailable'; print('CUDA GPU:', torch.cuda.get_device_name(0))"],
-                   environment, log_path)
+        run_logged(cuda_check, environment, log_path)
         torch_marker.touch()
     else:
         print("[2/4] Reusing CUDA PyTorch from this VM.", flush=True)

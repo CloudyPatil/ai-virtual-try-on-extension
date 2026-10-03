@@ -93,7 +93,6 @@ def ensure_dependencies(worker_dir: Path, catvton_dir: Path, persistent_root: Pa
         "from accelerate.utils.memory import clear_device_cache; "
         "import numpy, scipy, cv2, av, peft, transformers, diffusers; "
         "from model.pipeline import CatVTONPipeline; "
-        "from model.cloth_masker import AutoMasker; "
         "print('CatVTON imports verified.')",
     ], env=environment)
     marker.touch()
@@ -255,7 +254,9 @@ def main() -> None:
     if sys.version_info[:2] != (3, 11):
         raise RuntimeError("Use colab_bootstrap.py to launch the isolated Python 3.11 environment.")
     print("GPU:", require_gpu(), flush=True)
-    catvton_dir = ensure_catvton(args.persistent_root / "vendor")
+    # Git metadata on mounted Drive is much slower and prone to interrupted writes.
+    # Keep source on the VM; only large reusable downloads live in Drive.
+    catvton_dir = ensure_catvton(runtime_root / "vendor")
     ensure_dependencies(worker_dir, catvton_dir, args.persistent_root, runtime_root)
     if args.prepare_only:
         print("[4/4] Environment preparation complete.", flush=True)

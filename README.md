@@ -17,7 +17,7 @@ The repository currently provides:
 
 Mock inference remains the local default. Setting the documented provider variables routes jobs to the remote CatVTON worker so the development laptop does not carry the GPU load.
 
-Phase 4's resumable Colab workflow is implemented, but a live CatVTON run on a fresh Colab runtime still needs to be recorded. Phase 5's detector has automated DOM tests; picker behavior and cross-site acceptance are tracked in [the Phase 5 validation checklist](docs/phase-5-validation.md). Neither an automated DOM test nor the mock provider proves that an arbitrary retailer will work or that a generated image is realistic.
+Phase 4 has a rebuilt, notebook-driven Colab validation path, but a live CatVTON image and the extension's automatic masking/remote-worker path still need acceptance tests. Phase 5's detector has automated DOM tests; picker behavior and cross-site acceptance are tracked in [the Phase 5 validation checklist](docs/phase-5-validation.md). Neither an automated DOM test nor the mock provider proves that an arbitrary retailer will work or that a generated image is realistic.
 
 ## Repository layout
 
@@ -29,7 +29,7 @@ packages/
   contracts/    Shared schemas and TypeScript contracts
 docs/           Architecture, traceability and implementation notes
 notebooks/
-  tryon_studio_colab.ipynb  One-cell resumable free-GPU launcher
+  tryon_studio_colab.ipynb  Step-by-step, notebook-driven GPU validation
 scripts/
   configure-remote-worker.ps1  Secure local endpoint configurator
 services/
@@ -38,7 +38,7 @@ services/
 
 ## Remote GPU setup
 
-Use the resumable Colab notebook and follow `docs/colab-runbook.md`. It prepares an isolated Python 3.11 environment even when Colab uses Python 3.13, prints setup stages, and retains available package/model caches in Drive. Preparation-only mode is the default and starts no public API or tunnel. Remote serving requires a runtime/provider permitting that workflow; real model generation still needs live acceptance testing.
+Use the Colab notebook and follow [the runbook](docs/colab-runbook.md). It prepares an isolated Python 3.11 environment even when Colab uses Python 3.13, retains package/model caches in Drive, previews a simple mask, and offers a real image-generation test. It starts no public API or tunnel. Remote serving requires a permitted runtime/provider and a validated automatic masker; real generation still needs live acceptance testing.
 
 ## Choosing a product image
 
